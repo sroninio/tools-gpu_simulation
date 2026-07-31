@@ -1,4 +1,5 @@
 import heapq
+import math
 import random
 from collections import deque
 
@@ -96,7 +97,7 @@ def run_simulation(d_tools, d_gpu, K, num_gpus=1,
 
 def sweep(d_tools, d_gpu, num_gpus=1, k_multiplier=3, target_util=0.9999,
           n_warmup=10_000, n_measure=200_000, seed=42):
-    k_star = int(d_tools.mean / d_gpu.mean * num_gpus) + num_gpus
+    k_star = math.ceil(d_tools.mean / d_gpu.mean * num_gpus) + num_gpus
     k_end  = k_star * k_multiplier
     step   = max(1, k_star // 30)
 
