@@ -49,6 +49,8 @@ def run_lru_simulation(d_tools, d_gpu, d_recompute, K, S, num_gpus=1,
     alive_count    = 0         # current number of alive sessions
     alive_area     = 0.0       # time-weighted sum of alive_count (post warmup)
     last_event_t   = 0.0       # time of last event (for time-weighted avg)
+    blocks_produced = 0        # good GPU completions post warmup
+    blocks_evicted  = 0        # blocks lost to LRU eviction post warmup
     gpu_done_count = 0
     measured       = 0
     warmup_done    = False
@@ -58,11 +60,14 @@ def run_lru_simulation(d_tools, d_gpu, d_recompute, K, S, num_gpus=1,
     # ── helpers ────────────────────────────────────────────────────────────
     def lru_insert(sid):
         """Insert sid into storage, evicting LRU if needed."""
+        nonlocal blocks_evicted
         if sid in storage:
             storage.move_to_end(sid)
             return
         if len(storage) >= K:
-            storage.popitem(last=False)   # evict LRU
+            evicted_sid, _ = storage.popitem(last=False)   # evict LRU
+            if warmup_done and evicted_sid in steps:       # only alive sessions
+                blocks_evicted += S - steps[evicted_sid]
         storage[sid] = True
 
     def lru_touch(sid):
@@ -134,6 +139,7 @@ def run_lru_simulation(d_tools, d_gpu, d_recompute, K, S, num_gpus=1,
             if warmup_done:
                 if not is_recompute:
                     good_busy += svc
+                    blocks_produced += 1
                 measured += 1
             elif gpu_done_count >= n_warmup:
                 warmup_done   = True
@@ -162,7 +168,8 @@ def run_lru_simulation(d_tools, d_gpu, d_recompute, K, S, num_gpus=1,
             try_dequeue()
 
     wall = t - measure_start
-    return good_busy / (num_gpus * wall), alive_area / wall
+    eviction_ratio = blocks_evicted / blocks_produced if blocks_produced > 0 else 0.0
+    return good_busy / (num_gpus * wall), alive_area / wall, eviction_ratio
 
 
 def sweep_lru(d_tools, d_gpu, d_recompute, K, S_list, num_gpus=1,
