@@ -12,7 +12,7 @@ GPU_DONE   = 1
 
 def run_lru_simulation(d_tools, d_gpu, d_recompute, K, S, num_gpus=1,
                        n_warmup=10_000, n_measure=200_000, seed=42,
-                       dead_session_fix=False):
+                       dead_session_fix=False, spawn_on_death=False):
     """
     Closed network with LRU context storage.
 
@@ -51,6 +51,8 @@ def run_lru_simulation(d_tools, d_gpu, d_recompute, K, S, num_gpus=1,
     last_event_t   = 0.0       # time of last event (for time-weighted avg)
     blocks_produced = 0        # good GPU completions post warmup
     blocks_evicted  = 0        # blocks lost to LRU eviction post warmup
+    dead_in_storage = 0        # current dead sessions occupying storage slots
+    dead_area       = 0.0      # time-weighted sum of dead_in_storage (post warmup)
     gpu_done_count = 0
     measured       = 0
     warmup_done    = False
@@ -60,7 +62,7 @@ def run_lru_simulation(d_tools, d_gpu, d_recompute, K, S, num_gpus=1,
     # ── helpers ────────────────────────────────────────────────────────────
     def lru_insert(sid):
         """Insert sid into storage, evicting LRU if needed."""
-        nonlocal blocks_evicted
+        nonlocal blocks_evicted, dead_in_storage
         if sid in storage:
             storage.move_to_end(sid)
             return
@@ -68,6 +70,8 @@ def run_lru_simulation(d_tools, d_gpu, d_recompute, K, S, num_gpus=1,
             evicted_sid, _ = storage.popitem(last=False)   # evict LRU
             if warmup_done and evicted_sid in steps:       # only alive sessions
                 blocks_evicted += S - steps[evicted_sid]
+            if evicted_sid not in steps:                   # evicting a dead session
+                dead_in_storage -= 1
         storage[sid] = True
 
     def lru_touch(sid):
@@ -114,9 +118,10 @@ def run_lru_simulation(d_tools, d_gpu, d_recompute, K, S, num_gpus=1,
     while measured < n_measure:
         t, _, etype, sid, is_recompute, svc = heapq.heappop(heap)
 
-        # accumulate time-weighted alive count (post warmup)
+        # accumulate time-weighted counts (post warmup)
         if warmup_done:
             alive_area += alive_count * (t - last_event_t)
+            dead_area  += dead_in_storage * (t - last_event_t)
         last_event_t = t
 
         if etype == TOOLS_DONE:
@@ -161,15 +166,20 @@ def run_lru_simulation(d_tools, d_gpu, d_recompute, K, S, num_gpus=1,
                     # session dies
                     del steps[sid]
                     alive_count -= 1
-                    if dead_session_fix and sid in storage:
-                        del storage[sid]   # immediately free the slot
+                    if sid in storage:
+                        if dead_session_fix:
+                            del storage[sid]   # immediately free the slot
+                        else:
+                            dead_in_storage += 1  # slot stays, now dead
+                    if spawn_on_death:
+                        spawn_session()        # enforce 1:1 death→birth pairing
 
             # free GPU: serve queue or spawn new session
             try_dequeue()
 
     wall = t - measure_start
     eviction_ratio = blocks_evicted / blocks_produced if blocks_produced > 0 else 0.0
-    return good_busy / (num_gpus * wall), alive_area / wall, eviction_ratio
+    return good_busy / (num_gpus * wall), alive_area / wall, eviction_ratio, dead_area / wall
 
 
 def sweep_lru(d_tools, d_gpu, d_recompute, K, S_list, num_gpus=1,
