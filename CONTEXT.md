@@ -189,35 +189,55 @@ Oracle converges to ~100% at 500 GPUs (LLN). LRU always underperforms oracle bec
 
 ### Theoretical Minimum CMX_BW Derivation
 
-Given M (fast tier slots), λ = rps × num_gpus, and tool time CDF F(t):
+**Setup**: sessions arrive at rate λ = rps × num_gpus. Each session goes to tools
+for time T ~ F(t), then returns. On return: hit M (free) or miss M (fetched from CMX).
 
-**Step 1** — Solve for θ* (the eviction threshold):
-```
-F(θ*) · E[T | T ≤ θ*] = M / λ
-```
-Sessions with T ≤ θ* stay in M; sessions with T > θ* go to CMX.
+We choose θ* to split sessions: T ≤ θ* → stay in M, T > θ* → go to CMX.
+We want M always full (maximize M utilization).
 
-**Step 2** — CMX_BW* is the miss rate at λ:
+**Sessions in M** (by Little's Law on M):
 ```
-CMX_BW* = λ · (1 - F(θ*))
+number in M  =  λ · F(θ*) · E[T | T ≤ θ*]
 ```
+Set M exactly full:
+```
+M  =  λ · F(θ*) · E[T | T ≤ θ*]         ... (1)
+```
+This determines θ* given M and λ.
 
-**Step 3** — Verify total storage throughput equals λ:
+**Sessions in CMX** (by Little's Law on CMX):
 ```
-M / E[T | T ≤ θ*]  +  CMX_BW*  =  λ · F(θ*)  +  λ · (1 - F(θ*))  =  λ  ✓
+number in CMX  =  λ · (1 - F(θ*)) · E[T | T > θ*]
 ```
+But also, CMX serves at rate CMX_BW, each session waits E[T | T > θ*]:
+```
+number in CMX  =  CMX_BW · E[T | T > θ*]
+```
+Equating and cancelling E[T | T > θ*]:
+```
+CMX_BW  =  λ · (1 - F(θ*)           ... (2)
+```
+Or substituting (1):
+```
+                (1 - F(θ*))
+CMX_BW  =  M · ─────────────────────────    ... (3)
+                F(θ*) · E[T | T ≤ θ*]
+```
+Equation (3) is the one solved numerically to find θ* given M and CMX_BW.
 
-To find CMX_BW* numerically: sweep θ* over CDF until Little's Law is satisfied,
-then read off CMX_BW* = λ · (1 - F(θ*)).
+**Total storage throughput** (M contributes hits, CMX contributes misses):
+```
+total req/sec  =  M / E[T | T ≤ θ*]  +  CMX_BW
+```
+This is the maximum λ the storage hierarchy can sustain.
 
-**Scaling**: θ* is invariant with num_gpus (since M/λ = (K*/2)/(rps×num_gpus) = const).
+**To find minimum CMX_BW that sustains λ**:
+iterate CMX_BW upward, for each solve (3) for θ*, compute total req/sec,
+stop when total = λ.
+
+**Scaling**: θ* is invariant with num_gpus (M/λ = const since M = K*/2 ∝ num_gpus).
 CMX_BW* scales linearly with num_gpus.
 
-### Che's Approximation Connection
-The θ* equation is identical to Che's characteristic time for LRU caches under IRM:
-- Che: inter-request time per object → our: tool time T per session
-- Che: object request rate → our: session rate λ = rps × num_gpus
-- Same math, different physics.
 
 ---
 
