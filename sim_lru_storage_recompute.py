@@ -1,34 +1,50 @@
 """
 Storage hierarchy simulation — req/sec units throughout, no kv_size.
 
+System model
+------------
+Sessions cycle: GPU job → tools (time T) → GPU job → ... × S steps, then die.
+A new session is spawned whenever a GPU becomes idle and the queue is empty
+(open network for eviction='lru'). For eviction='oracle' or 'weak_oracle' the
+total number of inflight sessions is capped at N — no new session is spawned if
+N sessions are already in the system (closed network).
+
+On return from tools a session either hits M (served instantly, free) or misses
+(served according to miss_mode).
+
 Parameters
 ----------
 eviction : 'lru' | 'oracle' | 'weak_oracle'
-    'lru'          — standard LRU, always insert at MRU on return from tools.
-    'oracle'       — at GPU_DONE draw T; if T > theta_star evict immediately.
-                     Requires theta_star and N.
-    'weak_oracle'  — at GPU_DONE draw T; if T > theta_star schedule an EVICT_TIMER
-                     at t+theta_star; at timer fire evict from M only if still there.
-                     Requires theta_star and N.
+    'lru'         — standard LRU: always insert session into M at MRU position
+                    when it leaves for tools. Evicts LRU slot if M is full.
+                    No N required (open network — new session spawned on idle GPU).
+    'oracle'      — at GPU_DONE draw T; if T <= theta_star insert into M (MRU),
+                    else evict immediately from M. Requires theta_star AND N.
+    'weak_oracle' — at GPU_DONE draw T; always insert into M (MRU); if T > theta_star
+                    also schedule EVICT_TIMER at t+theta_star — evicts from M at
+                    that time only if session is still there.
+                    Requires theta_star AND N.
+                    Note: in practice weak_oracle == lru (LRU pressure naturally
+                    evicts long-staying sessions before the timer fires).
 
 miss_mode : 'cmx' | 'recompute'
-    'cmx'       — miss goes to CMX queue (service time = 1/cmx_bw).
-                  Requires cmx_bw (req/sec); set math.inf for instant fetch.
-    'recompute' — miss goes straight to GPU recompute queue (no CMX).
-                  Requires recompute_svc (GPU service time for recompute job, sec).
+    'cmx'       — miss → CMX single-server queue, service time = 1/cmx_bw.
+                  Requires cmx_bw (req/sec). Set math.inf for instant (free) fetch.
+    'recompute' — miss → immediately queued for GPU recompute job.
+                  Requires recompute_svc (GPU service time in sec). No CMX involved.
 
 N : int | None
     Max inflight sessions (closed network cap).
-    Required when eviction='oracle'.  Optional for eviction='lru'.
+    REQUIRED for eviction='oracle' or 'weak_oracle'. Must be None for open network.
 
-Returns (from run_sim)
-----------------------
+Returns
+-------
 dict with keys:
     gpu_util    — GPU busy fraction
-    cmx_util    — CMX busy fraction (0.0 when miss_mode='recompute' or cmx_bw=inf)
-    miss_rate   — fraction of tool returns that were misses
-    cmx_real    — actual CMX fetches per second (0 for recompute mode)
-    recomp_rate — actual GPU recomputes per second (0 for cmx mode)
+    cmx_util    — CMX busy fraction (0 when miss_mode='recompute' or cmx_bw=inf)
+    miss_rate   — fraction of tool returns that were cache misses
+    cmx_real    — CMX fetches per second (0 in recompute mode)
+    recomp_rate — GPU recomputes per second (0 in cmx mode)
 """
 
 import heapq

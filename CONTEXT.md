@@ -54,8 +54,8 @@ total req/sec = M / E[T | T ≤ θ*]  +  CMX_BW*  =  λ
 ```
 /Users/rspiegelman/gpu-utilization-sim/
   sim.py                     — original closed network simulator (no storage)
-  sim_lru.py                 — DEPRECATED (superseded by sim_storage.py)
-  sim_storage.py             — NEW: storage hierarchy simulator (req/sec, CMX queue)
+  sim_lru.py                 — DEPRECATED (superseded by sim_lru_storage_recompute.py)
+  sim_lru_storage_recompute.py — storage hierarchy simulator (req/sec, CMX queue or GPU recompute)
   codex_cli_granular.py      — 2000-bucket Codex CLI CDF for fine-grained θ* solving
   version_2_tool_time_cdfs.py — 15 workload CDFs (P05–P99, 20 buckets each)
   version_3_tool_time_cdfs.py — same but P99 removed, renormalized to P95
@@ -85,12 +85,12 @@ No storage, no recompute. Pure GPU utilization under closed queueing network.
 
 ## sim_lru.py — DEPRECATED
 
-Superseded by `sim_storage.py`. Kept in git for historical reference only.
+Superseded by `sim_lru_storage_recompute.py`. Kept in git for historical reference only.
 Used kv_size (GB) units and modeled misses as GPU recomputes. Do not use for new experiments.
 
 ---
 
-## sim_storage.py — Storage Hierarchy Simulator
+## sim_lru_storage_recompute.py — Storage Hierarchy Simulator
 
 **Units: req/sec throughout. No kv_size.**
 Models M (fast tier, LRU) + CMX (single-server queue or instant).
