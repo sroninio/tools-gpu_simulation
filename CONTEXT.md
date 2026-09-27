@@ -54,7 +54,7 @@ total req/sec = M / E[T | T ≤ θ*]  +  CMX_BW*  =  λ
 ```
 /Users/rspiegelman/gpu-utilization-sim/
   sim.py                     — original closed network simulator (no storage)
-  sim_lru.py                 — LRU KV cache simulator (kv_size units, recompute on GPU)
+  sim_lru.py                 — DEPRECATED (superseded by sim_storage.py)
   sim_storage.py             — NEW: storage hierarchy simulator (req/sec, CMX queue)
   codex_cli_granular.py      — 2000-bucket Codex CLI CDF for fine-grained θ* solving
   version_2_tool_time_cdfs.py — 15 workload CDFs (P05–P99, 20 buckets each)
@@ -83,37 +83,10 @@ No storage, no recompute. Pure GPU utilization under closed queueing network.
 
 ---
 
-## sim_lru.py — LRU KV Cache Simulator
+## sim_lru.py — DEPRECATED
 
-Models KV cache as LRU with finite capacity K. Misses trigger GPU recompute.
-**Units: kv_size (GB), BW in GB/s.** Untouched from original.
-
-### Key Function
-```python
-run_lru_simulation(d_tools, d_gpu, d_recompute, K, S, num_gpus=1,
-                   n_warmup, n_measure, seed,
-                   dead_session_fix=False, spawn_on_death=False)
-→ (good_util, avg_alive_sessions, eviction_ratio, dead_area/wall)
-```
-
-### Parameters
-| Param | Description |
-|---|---|
-| `d_tools` | tool time distribution |
-| `d_gpu` | GPU service time (good job) |
-| `d_recompute` | GPU service time (cache miss recompute) |
-| `K` | LRU cache capacity (slots) |
-| `S` | steps per session |
-| `num_gpus` | GPU count |
-| `dead_session_fix` | if True, free slot immediately on session death |
-| `spawn_on_death` | if True, spawn new session on every death (1:1 pairing) |
-
-### LRU via OrderedDict
-```python
-storage = OrderedDict()          # MRU at back, LRU at front
-storage.move_to_end(sid)         # promote to MRU
-storage.popitem(last=False)      # evict LRU
-```
+Superseded by `sim_storage.py`. Kept in git for historical reference only.
+Used kv_size (GB) units and modeled misses as GPU recomputes. Do not use for new experiments.
 
 ---
 
