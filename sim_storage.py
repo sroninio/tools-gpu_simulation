@@ -3,10 +3,13 @@ Storage hierarchy simulation — req/sec units throughout, no kv_size.
 
 Parameters
 ----------
-eviction : 'lru' | 'oracle'
-    'lru'    — standard LRU, always insert at MRU on return from tools.
-    'oracle' — smart eviction: at GPU_DONE draw T; if T <= theta_star keep in M,
-               else evict from M.  Requires theta_star and N.
+eviction : 'lru' | 'oracle' | 'weak_oracle'
+    'lru'          — standard LRU, always insert at MRU on return from tools.
+    'oracle'       — at GPU_DONE draw T; if T > theta_star evict immediately.
+                     Requires theta_star and N.
+    'weak_oracle'  — at GPU_DONE draw T; if T > theta_star schedule an EVICT_TIMER
+                     at t+theta_star; at timer fire evict from M only if still there.
+                     Requires theta_star and N.
 
 miss_mode : 'cmx' | 'recompute'
     'cmx'       — miss goes to CMX queue (service time = 1/cmx_bw).
@@ -33,9 +36,10 @@ import math
 import random
 from collections import deque, OrderedDict
 
-_TOOLS_DONE  = 0
-_GPU_DONE    = 1
-_CMX_DONE    = 2
+_TOOLS_DONE   = 0
+_GPU_DONE     = 1
+_CMX_DONE     = 2
+_EVICT_TIMER  = 3
 
 
 def run_sim(
@@ -55,11 +59,11 @@ def run_sim(
     n_measure=200_000,
 ):
     # ── validation ────────────────────────────────────────────────────────────
-    if eviction == 'oracle':
+    if eviction in ('oracle', 'weak_oracle'):
         if theta_star is None:
-            raise ValueError("eviction='oracle' requires theta_star")
+            raise ValueError(f"eviction='{eviction}' requires theta_star")
         if N is None:
-            raise ValueError("eviction='oracle' requires N (inflight cap)")
+            raise ValueError(f"eviction='{eviction}' requires N (inflight cap)")
     if miss_mode == 'cmx' and cmx_bw is None:
         raise ValueError("miss_mode='cmx' requires cmx_bw")
     if miss_mode == 'recompute' and recompute_svc is None:
@@ -165,6 +169,11 @@ def run_sim(
                     gpu_q.append((sid, True))
                     try_gpu()
 
+        # ── EVICT_TIMER ───────────────────────────────────────────────────────
+        elif et == _EVICT_TIMER:
+            if sid in storage:
+                del storage[sid]
+
         # ── CMX_DONE ──────────────────────────────────────────────────────────
         elif et == _CMX_DONE:
             if warmup_done and cmx_start_t is not None:
@@ -203,6 +212,14 @@ def run_sim(
                         else:
                             if sid in storage:
                                 del storage[sid]
+                    elif eviction == 'weak_oracle':
+                        lru_insert(sid)
+                        if tool_time > theta_star:
+                            heapq.heappush(
+                                heap,
+                                (t + theta_star, eid, _EVICT_TIMER, sid, False, 0.0),
+                            )
+                            eid += 1
                     else:
                         lru_insert(sid)
                     heapq.heappush(
