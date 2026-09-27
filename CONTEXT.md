@@ -14,7 +14,7 @@ agentic AI workloads (LLM agents cycling between tool execution and GPU inferenc
 
 GPU utilization can be predicted using only the average tool service time — distribution
 shape does not matter at large K* (LLN kicks in). Storage hierarchy bandwidth follows
-from Che's approximation applied to agentic tool-time distributions.
+from Little's Law applied to the two-tier storage hierarchy.
 
 **K\* formula**: `K* = ceil(E[T_tools] × rps × num_gpus) + num_gpus`
 
@@ -32,7 +32,7 @@ All metrics in **req/sec** (no kv_size units).
 
 **Theoretical minimum CMX_BW** to sustain λ = rps × num_gpus:
 
-Solve for θ* (characteristic time / Che's t_c):
+Solve for θ* (the eviction threshold):
 ```
 M = λ · F(θ*) · E[T | T ≤ θ*]        ← Little's Law on M (M exactly full)
 ```
