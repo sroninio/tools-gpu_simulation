@@ -1,0 +1,18 @@
+# Real workload distributions — not for public sharing
+version_1_tool_time_cdfs.py
+version_2_tool_time_cdfs.py
+version_3_tool_time_cdfs.py
+codex_cli_granular.py
+cdfToDistr.py
+distributions.py
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Results / scratch
+*.db
+*.json
+sim.txt
+sim_review.py
